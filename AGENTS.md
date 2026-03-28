@@ -1,18 +1,35 @@
-# Repository Agents
+# AGENTS.md
 
-This repository uses a lightweight `.pi` layout for prompts, skills, and local extension logic.
+## Purpose
+This repository contains the production code for <project>.
 
-## Working Rules
+## Allowed work
+- Implement features in `src/`
+- Add tests in `tests/`
+- Update docs in `docs/`
 
-- Prime the agent with `.pi/prompts/prime.md` before implementation-heavy work.
-- Use `.pi/prompts/review.md` for review-only tasks.
-- Treat `.pi/SYSTEM.md` as the base repo contract.
-- Treat `.pi/APPEND_SYSTEM.md` as project-specific additions to the base contract.
-- Keep reusable automation notes in `.pi/skills/`.
-- Keep policy and routing code in `.pi/extensions/`.
+## Protected paths
+- `.github/workflows/`
+- `infra/`
+- `deployment/`
+- `.env`
+- `secrets/`
+- `package-lock.json` unless explicitly requested
 
-## Protected Content
+## Required checks before completion
+- npm run lint
+- npm run typecheck
+- npm test
 
-- Do not overwrite `.pi/SYSTEM.md` without explicit approval.
-- Prefer additive updates in `.pi/APPEND_SYSTEM.md` when changing agent behavior.
-- Review changes to `.pi/extensions/` carefully because they affect execution policy.
+## Git rules
+- Never push directly
+- Never merge
+- Never delete branches
+- Never rewrite git history
+- Never change release or CI config without explicit request
+
+## Definition of done
+A task is complete only when:
+1. code is changed
+2. tests or checks pass
+3. a short summary of files changed is provided
