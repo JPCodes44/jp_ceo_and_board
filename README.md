@@ -33,6 +33,7 @@ Useful local prompt, skill, and tool entry points:
   - `worker` for focused implementation, with `--write` only when needed
 - `/subagent-kill` stops the currently running background subagent (`--force` sends SIGKILL, optional id like `/subagent-kill 4`)
 - `/subrm` is a short alias for `/subagent-kill`; with no args it targets the top/current subagent
+- `/tilldone-stop` stops the current automatic task sequence
 - `Ctrl+X` cycles Pi through the local green → purple → cyan → orange → black → default → white themes
 - `subagent` also exists as a callable tool for the main agent
 
@@ -54,7 +55,8 @@ After editing `.pi/`, reload resources in Pi with:
 │  │  ├─ permission-policy.ts
 │  │  ├─ protected-paths.ts
 │  │  ├─ subagent.ts
-│  │  └─ theme-cycle.ts
+│  │  ├─ theme-cycle.ts
+│  │  └─ tilldone.ts
 │  ├─ themes/
 │  │  ├─ black.json
 │  │  ├─ cyan.json
@@ -76,7 +78,8 @@ After editing `.pi/`, reload resources in Pi with:
 │     ├─ permission-gate.ts
 │     ├─ subagent.ts
 │     ├─ task-mode.ts
-│     └─ theme-cycle.ts
+│     ├─ theme-cycle.ts
+│     └─ tilldone.ts
 ├─ package.json
 ├─ tests/
 └─ tsconfig.json
