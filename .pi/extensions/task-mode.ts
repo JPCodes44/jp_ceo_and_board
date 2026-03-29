@@ -1,3 +1,5 @@
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+
 export type TaskMode = "ship-task" | "repo-review" | "general";
 
 export interface TaskModeResult {
@@ -50,4 +52,26 @@ export function recommendedPrompt(mode: TaskMode): string {
     default:
       return ".pi/SYSTEM.md";
   }
+}
+
+export default function taskModeExtension(pi: ExtensionAPI) {
+  pi.on("input", async (event, ctx) => {
+    if (!ctx.hasUI || event.source === "extension") {
+      return { action: "continue" };
+    }
+
+    const taskMode = detectTaskMode(event.text);
+    const theme = ctx.ui.theme;
+
+    if (taskMode.mode === "general") {
+      ctx.ui.setStatus("task-mode", undefined);
+      return { action: "continue" };
+    }
+
+    const label = theme.fg("accent", `mode:${taskMode.mode}`);
+    const hint = theme.fg("dim", ` ${recommendedPrompt(taskMode.mode)}`);
+    ctx.ui.setStatus("task-mode", label + hint);
+
+    return { action: "continue" };
+  });
 }

@@ -1,104 +1,50 @@
-import path from "node:path";
-
 import {
-  DEFAULT_PROTECTED_PATHS,
-  type ProtectedPath,
-  isProtectedPath,
-} from "./protected-paths.js";
+  isToolCallEventType,
+  type ExtensionAPI,
+  type ToolCallEventResult,
+} from "@mariozechner/pi-coding-agent";
 
-export type PermissionAction = "read" | "write" | "delete" | "execute";
+const DANGEROUS_COMMAND_PATTERNS = [
+  /\brm\s+-rf\b/i,
+  /\bgit\s+push\b/i,
+  /\bgit\s+reset\s+--hard\b/i,
+  /\bgit\s+clean\s+-fd\b/i,
+  /\bsudo\b/i,
+  /\bnpm\s+publish\b/i,
+];
 
-export interface PermissionRequest {
-  action: PermissionAction;
-  target: string;
-  reason?: string;
+function shouldGateCommand(command: string): boolean {
+  return DANGEROUS_COMMAND_PATTERNS.some((pattern) => pattern.test(command));
 }
 
-export interface PermissionDecision {
-  allowed: boolean;
-  escalated: boolean;
-  reason: string;
-}
+export default function permissionGateExtension(pi: ExtensionAPI) {
+  pi.on("tool_call", async (event, ctx): Promise<ToolCallEventResult | undefined> => {
+    if (!isToolCallEventType("bash", event)) {
+      return undefined;
+    }
 
-export interface PermissionGateOptions {
-  root: string;
-  protectedPaths?: readonly ProtectedPath[];
-  writableRoots?: readonly string[];
-  allowDelete?: boolean;
-}
+    const command = event.input.command.trim();
+    if (!shouldGateCommand(command)) {
+      return undefined;
+    }
 
-function normalizeAbsolute(root: string, candidate: string): string {
-  const absolute = path.isAbsolute(candidate)
-    ? candidate
-    : path.resolve(root, candidate);
+    if (!ctx.hasUI) {
+      return {
+        block: true,
+        reason: "Risky bash command blocked because no interactive approval UI is available.",
+      };
+    }
 
-  return path.normalize(absolute);
-}
+    const approved = await ctx.ui.confirm("Approve risky command?", command);
+    if (approved) {
+      return undefined;
+    }
 
-function isInsideAllowedRoots(
-  target: string,
-  allowedRoots: readonly string[],
-  root: string,
-): boolean {
-  return allowedRoots
-    .map((entry) => normalizeAbsolute(root, entry))
-    .some((allowedRoot) => {
-      if (target === allowedRoot) {
-        return true;
-      }
-
-      return target.startsWith(`${allowedRoot}${path.sep}`);
-    });
-}
-
-export function evaluatePermission(
-  request: PermissionRequest,
-  options: PermissionGateOptions,
-): PermissionDecision {
-  const protectedPaths = options.protectedPaths ?? DEFAULT_PROTECTED_PATHS;
-  const writableRoots = options.writableRoots ?? [options.root];
-  const target = normalizeAbsolute(options.root, request.target);
-
-  if (request.action === "read") {
     return {
-      allowed: true,
-      escalated: false,
-      reason: "Read access is allowed.",
+      block: true,
+      reason: "User denied risky bash command.",
     };
-  }
-
-  if (isProtectedPath(options.root, target, protectedPaths)) {
-    return {
-      allowed: false,
-      escalated: true,
-      reason: "Target is inside a protected path.",
-    };
-  }
-
-  if (request.action === "delete" && !options.allowDelete) {
-    return {
-      allowed: false,
-      escalated: true,
-      reason: "Delete access requires explicit approval.",
-    };
-  }
-
-  if (!isInsideAllowedRoots(target, writableRoots, options.root)) {
-    return {
-      allowed: false,
-      escalated: true,
-      reason: "Target is outside configured writable roots.",
-    };
-  }
-
-  return {
-    allowed: true,
-    escalated: false,
-    reason: "Request is permitted by the local policy.",
-  };
+  });
 }
 
-export function createPermissionGate(options: PermissionGateOptions) {
-  return (request: PermissionRequest): PermissionDecision =>
-    evaluatePermission(request, options);
-}
+export { DANGEROUS_COMMAND_PATTERNS, shouldGateCommand };

@@ -1,44 +1,35 @@
-import path from "node:path";
+import { isToolCallEventType, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
-export const DEFAULT_PROTECTED_PATHS = [
-  ".git",
-  ".env",
-  ".env.local",
-  ".env.production",
-  ".pi/SYSTEM.md",
-  ".pi/APPEND_SYSTEM.md",
-  ".pi/extensions",
-] as const;
+import {
+  DEFAULT_PROTECTED_PATHS,
+  isProtectedPath,
+} from "../lib/protected-paths.ts";
 
-export type ProtectedPath = (typeof DEFAULT_PROTECTED_PATHS)[number] | string;
-
-function normalizeAbsolute(root: string, candidate: string): string {
-  const absolute = path.isAbsolute(candidate)
-    ? candidate
-    : path.resolve(root, candidate);
-
-  return path.normalize(absolute);
+function blockReason(targetPath: string): string {
+  return `Path \"${targetPath}\" is protected by local repo policy.`;
 }
 
-export function normalizeProtectedPaths(
-  root: string,
-  protectedPaths: readonly ProtectedPath[] = DEFAULT_PROTECTED_PATHS,
-): string[] {
-  return protectedPaths.map((entry) => normalizeAbsolute(root, entry));
-}
+export default function protectedPathsExtension(pi: ExtensionAPI) {
+  const root = process.cwd();
 
-export function isProtectedPath(
-  root: string,
-  candidate: string,
-  protectedPaths: readonly ProtectedPath[] = DEFAULT_PROTECTED_PATHS,
-): boolean {
-  const target = normalizeAbsolute(root, candidate);
+  pi.on("tool_call", async (event, ctx) => {
+    if (isToolCallEventType("write", event) || isToolCallEventType("edit", event)) {
+      const targetPath = event.input.path;
 
-  return normalizeProtectedPaths(root, protectedPaths).some((protectedPath) => {
-    if (target === protectedPath) {
-      return true;
+      if (!isProtectedPath(root, targetPath, DEFAULT_PROTECTED_PATHS)) {
+        return undefined;
+      }
+
+      if (ctx.hasUI) {
+        ctx.ui.notify(`Blocked write to protected path: ${targetPath}`, "warning");
+      }
+
+      return {
+        block: true,
+        reason: blockReason(targetPath),
+      };
     }
 
-    return target.startsWith(`${protectedPath}${path.sep}`);
+    return undefined;
   });
 }

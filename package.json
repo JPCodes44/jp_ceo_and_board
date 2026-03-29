@@ -5,12 +5,17 @@
   "type": "module",
   "description": "AI multi-agent orchestration scaffold with local prompts, skills, and extensions.",
   "scripts": {
+    "lint": "tsc --noEmit --pretty false",
     "typecheck": "tsc --noEmit",
+    "test": "node --test --experimental-strip-types tests/**/*.test.ts",
     "pi": "npx @mariozechner/pi-coding-agent@0.63.1",
     "pi:print": "npx @mariozechner/pi-coding-agent@0.63.1 -p"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@mariozechner/pi-coding-agent": "^0.63.1"
   }
 }

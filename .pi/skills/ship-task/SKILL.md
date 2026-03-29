@@ -1,3 +1,8 @@
+---
+name: ship-task
+description: Implements a scoped repository change end to end with minimal edits and focused verification. Use when asked to build, fix, add, or finish a concrete task.
+---
+
 # Ship Task
 
 Use this skill when the task is to implement a change end to end.

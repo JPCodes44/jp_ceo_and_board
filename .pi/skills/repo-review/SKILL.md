@@ -1,3 +1,8 @@
+---
+name: repo-review
+description: Reviews repository changes for defects, regressions, risky assumptions, and missing validation. Use when asked to review, audit, or inspect a change.
+---
+
 # Repo Review
 
 Use this skill when the task is a code review or change audit.

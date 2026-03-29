@@ -10,9 +10,12 @@
     "forceConsistentCasingInFileNames": true,
     "types": [
       "node"
-    ]
+    ],
+    "allowImportingTsExtensions": true
   },
   "include": [
-    ".pi/extensions/**/*.ts"
+    ".pi/extensions/**/*.ts",
+    ".pi/lib/**/*.ts",
+    "tests/**/*.ts"
   ]
 }
