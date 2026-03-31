@@ -23,6 +23,7 @@
   "dependencies": {
     "@eslint/js": "^10.0.1",
     "@mariozechner/pi-coding-agent": "^0.63.1",
+    "@sinclair/typebox": "^0.34.49",
     "eslint": "^10.1.0",
     "typescript-eslint": "^8.57.2"
   }
