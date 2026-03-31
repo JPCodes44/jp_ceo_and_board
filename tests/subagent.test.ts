@@ -20,10 +20,13 @@ import {
   tokenizeSubagentCommand,
 } from "../.pi/lib/subagent.ts";
 
-test("resolveSubagentTools keeps general and review profiles read-only", () => {
+test("resolveSubagentTools keeps non-worker profiles read-only", () => {
   assert.deepEqual(resolveSubagentTools("general"), ["read", "grep", "find", "ls"]);
   assert.deepEqual(resolveSubagentTools("scout"), ["read", "grep", "find", "ls"]);
+  assert.deepEqual(resolveSubagentTools("planner"), ["read", "grep", "find", "ls"]);
   assert.deepEqual(resolveSubagentTools("reviewer"), ["read", "grep", "find", "ls"]);
+  assert.deepEqual(resolveSubagentTools("documenter"), ["read", "grep", "find", "ls"]);
+  assert.deepEqual(resolveSubagentTools("red-team"), ["read", "grep", "find", "ls"]);
 });
 
 test("resolveSubagentTools enables worker write tools only when requested", () => {
@@ -51,6 +54,8 @@ test("createSubagentInvocation increments recursion depth and appends task", () 
 
   assert.equal(invocation.command, process.execPath);
   assert.equal(invocation.env.PI_SUBAGENT_DEPTH, "1");
+  assert.ok(invocation.args.includes("--mode"));
+  assert.ok(invocation.args.includes("json"));
   assert.ok(invocation.args.includes("--model"));
   assert.ok(invocation.args.includes("--thinking"));
   assert.equal(invocation.args.at(-1), "fix the failing test");

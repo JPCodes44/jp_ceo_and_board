@@ -25,12 +25,19 @@ Useful local prompt, skill, and tool entry points:
 - `/skill:ship-task` runs the scoped implementation workflow
 - `/skill:repo-review` runs the defect-focused review workflow
 - `/subagent <agent> <task>` runs a subagent in the background with a live status widget
+  - supported agents: `general`, `scout`, `planner`, `reviewer`, `worker`, `documenter`, `red-team`
   - with no args, it defaults to a `general` run over the current repo
   - if the first argument is not a known profile, it is treated as general prompt text
   - `general` for broad repo help when you do not want a specialized mode
   - `scout` for codebase recon
   - `reviewer` for defect-focused review
   - `worker` for focused implementation, with `--write` only when needed
+- the agent team dashboard auto-routes each user request to the best team member, shows a live thinking blurb for active team agents, and honors explicit member requests like "use the reviewer" or "builder should do this"
+- `/team-model <role> <model-name>` changes the configured model shown for a team member
+- `/team-model-all <model-name>` changes the configured model for every role in the active team roster
+- `/team-select <team-name|all>` switches the active roster using `teams/agent-teams.yaml`; `all` restores the full default team
+- `/team-agent-log <role>` shows the full captured thinking log for that team member
+- `/update` reloads the active team roster from `teams/agent-teams.yaml` and refreshes available model completions
 - `/subagent-kill` stops the currently running background subagent (`--force` sends SIGKILL, optional id like `/subagent-kill 4`)
 - `/subrm` is a short alias for `/subagent-kill`; with no args it targets the top/current subagent
 - `/tilldone-stop` stops the current automatic task sequence
@@ -43,6 +50,16 @@ After editing `.pi/`, reload resources in Pi with:
 /reload
 ```
 
+Team rosters for `/team-select` live in `teams/agent-teams.yaml` and use a lightweight YAML mapping, for example:
+
+```yaml
+teams:
+  delivery: [planner, worker, reviewer]
+  docs:
+    - planner
+    - documenter
+```
+
 ## Files
 
 ```text
@@ -52,6 +69,7 @@ After editing `.pi/`, reload resources in Pi with:
 │  ├─ SYSTEM.md
 │  ├─ APPEND_SYSTEM.md
 │  ├─ lib/
+│  │  ├─ agent-team.ts
 │  │  ├─ permission-policy.ts
 │  │  ├─ protected-paths.ts
 │  │  ├─ subagent.ts
@@ -74,6 +92,7 @@ After editing `.pi/`, reload resources in Pi with:
 │  │  └─ ship-task/
 │  │     └─ SKILL.md
 │  └─ extensions/
+│     ├─ agent-team.ts
 │     ├─ protected-paths.ts
 │     ├─ permission-gate.ts
 │     ├─ subagent.ts

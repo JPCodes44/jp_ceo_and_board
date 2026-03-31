@@ -8,14 +8,8 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
-    "types": [
-      "node"
-    ],
+    "types": ["node"],
     "allowImportingTsExtensions": true
   },
-  "include": [
-    ".pi/extensions/**/*.ts",
-    ".pi/lib/**/*.ts",
-    "tests/**/*.ts"
-  ]
+  "include": [".pi/extensions/**/*.ts", ".pi/lib/**/*.ts", "tests/**/*.ts"]
 }

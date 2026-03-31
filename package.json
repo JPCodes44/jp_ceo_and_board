@@ -5,17 +5,25 @@
   "type": "module",
   "description": "AI multi-agent orchestration scaffold with local prompts, skills, and extensions.",
   "scripts": {
-    "lint": "tsc --noEmit --pretty false",
-    "typecheck": "tsc --noEmit",
-    "test": "node --test --experimental-strip-types tests/**/*.test.ts",
+    "lint": "bun run lint:eslint && bun run lint:types",
+    "lint:eslint": "bun eslint .",
+    "lint:types": "bun tsc --noEmit",
+    "lint:fix": "bun eslint . --fix",
+    "typecheck": "bun tsc --noEmit",
+    "test": "bun test",
+    "format": "bun prettier --write .",
+    "format:check": "bun prettier --check .",
     "pi": "npx @mariozechner/pi-coding-agent@0.63.1",
     "pi:print": "npx @mariozechner/pi-coding-agent@0.63.1 -p"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.2"
   },
   "dependencies": {
-    "@mariozechner/pi-coding-agent": "^0.63.1"
+    "@eslint/js": "^10.0.1",
+    "@mariozechner/pi-coding-agent": "^0.63.1",
+    "eslint": "^10.1.0",
+    "typescript-eslint": "^8.57.2"
   }
 }
