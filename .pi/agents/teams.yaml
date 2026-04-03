@@ -1,0 +1,11 @@
+board:
+  - ceo
+  - financial-lead
+  - product-manager
+  - technical-architect
+  - compounder
+
+key-holders:
+  - ceo
+  - financial-lead
+  - technical-architect
