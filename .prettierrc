@@ -7,25 +7,26 @@
   "bracketSpacing": true,
   "bracketSameLine": false,
   "arrowParens": "always",
-  "parser": "typescript",
   "overrides": [
     {
       "files": ["*.ts", "*.tsx"],
-      "options": {
-        "parser": "typescript"
-      }
+      "options": { "parser": "typescript" }
     },
     {
-      "files": ["*.js", "*.jsx"],
-      "options": {
-        "parser": "babel"
-      }
+      "files": ["*.js", "*.mjs", "*.jsx"],
+      "options": { "parser": "babel" }
     },
     {
       "files": "*.json",
-      "options": {
-        "parser": "json"
-      }
+      "options": { "parser": "json" }
+    },
+    {
+      "files": "*.md",
+      "options": { "parser": "markdown" }
+    },
+    {
+      "files": ["*.yaml", "*.yml"],
+      "options": { "parser": "yaml" }
     }
   ]
 }

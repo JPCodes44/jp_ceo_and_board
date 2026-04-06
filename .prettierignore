@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Bun lockfile (binary-adjacent, not formatted)
+bun.lock
+
+# Files with no parseable extension
+LICENSE
+.gitignore
+.justfile
+
+# PI config files — prompt/skill/agent files are hand-authored, not auto-formatted
+.pi/agents/
+.pi/prompts/
+.pi/skills/
+.pi/SYSTEM.md
+.pi/APPEND_SYSTEM.md
+
+# Hooks folder (scripts added manually, not auto-formatted)
+hooks/
+
+# Generated / build output
+dist/
+.dist/

@@ -32,11 +32,14 @@ export default function mode(pi: ExtensionAPI) {
           return;
         }
 
-        const content = await readFile(join(agentsDir, `${selected}.md`), 'utf-8');
+        const content = await readFile(
+          join(agentsDir, `${selected}.md`),
+          'utf-8',
+        );
         activeAgent = { name: selected, prompt: content };
         ctx.ui.setStatus('mode', `🤖 ${selected}`);
         ctx.ui.notify(`Switched to ${selected} mode`, 'info');
-      } catch (error) {
+      } catch {
         ctx.ui.notify('Could not read agents directory', 'error');
       }
     },

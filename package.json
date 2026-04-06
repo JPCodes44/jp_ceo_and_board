@@ -5,19 +5,26 @@
   "type": "module",
   "description": "AI multi-agent orchestration scaffold with local prompts, skills, and extensions.",
   "scripts": {
+    "check": "bun run lint:types && bun run lint:eslint && bun run format:check",
+    "check:ci": "bun run check && bun run test",
     "lint": "bun run lint:eslint && bun run lint:types",
     "lint:eslint": "bun eslint .",
-    "lint:types": "bun tsc --noEmit",
+    "lint:extensions": "bun eslint '.pi/extensions/**/*.ts'",
+    "lint:types": "bun tsc --noEmit -p tsconfig.extensions.json",
+    "lint:types:all": "bun tsc --noEmit",
     "lint:fix": "bun eslint . --fix",
+    "fix": "bun run lint:fix && bun run format",
     "typecheck": "bun tsc --noEmit",
     "test": "bun test",
     "format": "bun prettier --write .",
     "format:check": "bun prettier --check .",
+    "hooks:install": "bun run hooks/install.js",
     "pi": "npx @mariozechner/pi-coding-agent@0.63.1",
     "pi:print": "npx @mariozechner/pi-coding-agent@0.63.1 -p"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "prettier": "^3.5.3",
     "typescript": "^6.0.2"
   },
   "dependencies": {
