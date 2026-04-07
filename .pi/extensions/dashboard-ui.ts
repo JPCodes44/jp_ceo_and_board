@@ -1,10 +1,13 @@
 import type {
   AgentToolUpdateCallback,
+  AgentToolResult,
   ExtensionAPI,
   ExtensionContext,
   Theme,
+  ToolRenderResultOptions,
 } from '@mariozechner/pi-coding-agent';
 import type { Component, TUI } from '@mariozechner/pi-tui';
+import { Text } from '@mariozechner/pi-tui';
 import { Type } from '@sinclair/typebox';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -16,6 +19,21 @@ export interface DispatchSchema {
   _signal: AbortSignal | undefined;
   _onUpdate: AgentToolUpdateCallback<unknown> | undefined;
   _ctx: ExtensionContext;
+}
+
+interface DispatchRunDetails {
+  agent: string;
+  task: string;
+  dependsOn: string[];
+  status: 'pending' | 'starting' | 'done' | 'error';
+  output?: string;
+  exitCode?: number;
+  elapsed?: number;
+}
+
+interface DispatchToolDetails {
+  status: 'running' | 'done' | 'error';
+  runs: DispatchRunDetails[];
 }
 
 export default function Dashboard(pi: ExtensionAPI) {
@@ -41,6 +59,15 @@ export default function Dashboard(pi: ExtensionAPI) {
   ): string | undefined => {
     if (!model?.id) return undefined;
     return model.id.includes('/') ? model.id : `${model.provider}/${model.id}`;
+  };
+
+  const syncSessionModel = (
+    model?: { provider?: string; id?: string } | null,
+  ) => {
+    const qualifiedModel = toQualifiedModel(model);
+    if (qualifiedModel) {
+      sessionModel = qualifiedModel;
+    }
   };
 
   const getEffectiveModel = (agent: string) => {
@@ -144,6 +171,88 @@ export default function Dashboard(pi: ExtensionAPI) {
   // ---------------------------------------------------------------------------
   // Dashboard widget — render() reads only from in-memory state; no I/O.
   // ---------------------------------------------------------------------------
+  const renderDispatchResult = (
+    result: AgentToolResult<undefined | DispatchToolDetails | unknown>,
+    options: ToolRenderResultOptions,
+    theme: Theme,
+  ): Component => {
+    const details = result.details as DispatchToolDetails | undefined;
+    if (!details) {
+      const text = result.content[0];
+      return new Text(text?.type === 'text' ? text.text : '', 0, 0);
+    }
+
+    const iconForStatus = (status: DispatchRunDetails['status']) => {
+      switch (status) {
+        case 'done':
+          return theme.fg('success', '✓');
+        case 'error':
+          return theme.fg('error', '✗');
+        case 'starting':
+          return theme.fg('warning', '⏳');
+        default:
+          return theme.fg('muted', '○');
+      }
+    };
+
+    const summarizeOutput = (output?: string) => {
+      if (!output) return theme.fg('muted', '(no output yet)');
+      const lines = output
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+      if (lines.length === 0) return theme.fg('muted', '(no output yet)');
+      const limit = options.expanded ? 8 : 3;
+      const visible = lines.slice(0, limit).join('\n');
+      return options.expanded || lines.length <= limit
+        ? visible
+        : `${visible}\n${theme.fg('muted', '...')}`;
+    };
+
+    const doneCount = details.runs.filter(
+      (run) => run.status === 'done',
+    ).length;
+    const errorCount = details.runs.filter(
+      (run) => run.status === 'error',
+    ).length;
+    const startingCount = details.runs.filter(
+      (run) => run.status === 'starting',
+    ).length;
+    const headerIcon =
+      details.status === 'error'
+        ? theme.fg('warning', '◐')
+        : details.status === 'running'
+          ? theme.fg('warning', '⏳')
+          : theme.fg('success', '✓');
+
+    let text = `${headerIcon} ${theme.fg('toolTitle', theme.bold('dispatch_agent '))}${theme.fg('accent', `${doneCount}/${details.runs.length} done`)}`;
+    if (startingCount > 0) {
+      text += theme.fg('muted', `, ${startingCount} running`);
+    }
+    if (errorCount > 0) {
+      text += theme.fg('muted', `, ${errorCount} failed`);
+    }
+
+    for (const run of details.runs) {
+      const elapsedLabel =
+        typeof run.elapsed === 'number'
+          ? theme.fg('muted', ` (${Math.round(run.elapsed / 1000)}s)`)
+          : '';
+      const dependencyLabel =
+        run.dependsOn.length > 0
+          ? theme.fg('muted', ` deps: ${run.dependsOn.join(', ')}`)
+          : '';
+      text += `\n\n${iconForStatus(run.status)} ${theme.fg('accent', run.agent)}${elapsedLabel}`;
+      text += `\n${theme.fg('dim', run.task)}`;
+      if (dependencyLabel) {
+        text += `\n${dependencyLabel}`;
+      }
+      text += `\n${theme.fg('toolOutput', summarizeOutput(run.output))}`;
+    }
+
+    return new Text(text, 0, 0);
+  };
+
   const dashboardWidget = (): ((tui: TUI, theme: Theme) => Component) => {
     return (_tui, theme) => {
       return {
@@ -363,7 +472,9 @@ export default function Dashboard(pi: ExtensionAPI) {
   // Registered once at module load time. Injects the current team context
   // (if any) and always appends the orchestrator mode prompt in one pass.
   // ---------------------------------------------------------------------------
-  pi.on('before_agent_start', async (_event) => {
+  pi.on('before_agent_start', async (_event, ctx) => {
+    syncSessionModel(ctx.model);
+
     const activeTeamName = selectedTeam ?? 'none';
     const teamMembers = currentMembers.join(', ');
     const teamContext = selectedTeamContext ? `\n\n${selectedTeamContext}` : '';
@@ -480,6 +591,34 @@ You can ONLY dispatch to agents listed above. Do not attempt to dispatch to agen
     name: 'dispatch_agent',
     label: 'Dispatch Agent',
     description: `Dispatch one or more agents. Each entry has { agent, task, dependsOn? }. Agents with no dependsOn run immediately in parallel. Agents with dependsOn wait for those agents to finish and receive their outputs as context. Available agents: ${currentMembers.join(', ')}.`,
+    renderCall(args, theme) {
+      const runs = Array.isArray(args.agents) ? args.agents : [];
+      let text =
+        theme.fg('toolTitle', theme.bold('dispatch_agent ')) +
+        theme.fg(
+          'accent',
+          `${runs.length} agent${runs.length === 1 ? '' : 's'}`,
+        );
+      for (const run of runs.slice(0, 4)) {
+        const agent =
+          typeof run?.agent === 'string' && run.agent.trim()
+            ? run.agent.trim()
+            : 'unknown';
+        const task =
+          typeof run?.task === 'string' && run.task.trim()
+            ? run.task.trim()
+            : '(no task)';
+        const preview = task.length > 56 ? `${task.slice(0, 56)}...` : task;
+        text += `\n  ${theme.fg('accent', agent)} ${theme.fg('dim', preview)}`;
+      }
+      if (runs.length > 4) {
+        text += `\n  ${theme.fg('muted', `... +${runs.length - 4} more`)}`;
+      }
+      return new Text(text, 0, 0);
+    },
+    renderResult(result, options, theme) {
+      return renderDispatchResult(result, options, theme);
+    },
     parameters: Type.Object({
       agents: Type.Array(
         Type.Object({
@@ -506,6 +645,42 @@ You can ONLY dispatch to agents listed above. Do not attempt to dispatch to agen
 
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       const { agents } = params;
+      const runDetails = new Map<string, DispatchRunDetails>(
+        agents.map(({ agent, task, dependsOn }) => [
+          agent,
+          {
+            agent,
+            task,
+            dependsOn: dependsOn ?? [],
+            status: 'pending',
+          },
+        ]),
+      );
+      const getDetails = (
+        status: DispatchToolDetails['status'],
+      ): DispatchToolDetails => ({
+        status,
+        runs: agents.map(({ agent }) => ({
+          ...runDetails.get(agent)!,
+        })),
+      });
+
+      const emitUpdate = (status: DispatchToolDetails['status']) => {
+        _onUpdate?.({
+          content: [
+            {
+              type: 'text',
+              text: `Dispatch progress: ${agents
+                .map(({ agent }) => {
+                  const run = runDetails.get(agent)!;
+                  return `${agent}=${run.status}`;
+                })
+                .join(', ')}`,
+            },
+          ],
+          details: getDetails(status),
+        });
+      };
 
       // Fix 8: Build a Set once for O(1) membership checks in the validation
       // loop, replacing the O(N) currentMembers.includes(agent) linear scan.
@@ -522,7 +697,7 @@ You can ONLY dispatch to agents listed above. Do not attempt to dispatch to agen
                 text: `Unknown agent: "${agent}". Available: ${currentMembers.join(', ')}`,
               },
             ],
-            details: { agents, status: 'error' },
+            details: getDetails('error'),
           };
         }
         for (const dep of dependsOn ?? []) {
@@ -534,7 +709,7 @@ You can ONLY dispatch to agents listed above. Do not attempt to dispatch to agen
                   text: `Agent "${agent}" has unknown dependency "${dep}". Must be one of: ${[...allAgentNames].join(', ')}`,
                 },
               ],
-              details: { agents, status: 'error' },
+              details: getDetails('error'),
             };
           }
         }
@@ -582,7 +757,7 @@ You can ONLY dispatch to agents listed above. Do not attempt to dispatch to agen
       if (sortedAgents.kind === 'error') {
         return {
           content: [{ type: 'text', text: sortedAgents.error }],
-          details: { agents, status: 'error' },
+          details: getDetails('error'),
         };
       }
 
@@ -614,10 +789,11 @@ You can ONLY dispatch to agents listed above. Do not attempt to dispatch to agen
             // actually start) before the notification fires. All _onUpdate
             // calls remain optional-chained as required.
             queueMicrotask(() => {
-              _onUpdate?.({
-                content: [{ type: 'text', text: `[${agent}] starting...` }],
-                details: { agent, status: 'starting' },
+              runDetails.set(agent, {
+                ...runDetails.get(agent)!,
+                status: 'starting',
               });
+              emitUpdate('running');
             });
 
             // Fix 4: removed setWidget call — mutating dispatchedAgents is
@@ -640,21 +816,33 @@ You can ONLY dispatch to agents listed above. Do not attempt to dispatch to agen
 
             const formattedResult = `${summary}\n\n${displayOutput}`;
 
-            // Emit a done event as soon as this agent resolves — agents
-            // that finish first appear first in the progressive stream.
-            _onUpdate?.({
-              content: [
-                {
-                  type: 'text',
-                  text: `[${agent}] done:\n${formattedResult}`,
-                },
-              ],
-              details: { agent, status: 'done', output: formattedResult },
+            runDetails.set(agent, {
+              ...runDetails.get(agent)!,
+              status: rawResult.exitCode === 0 ? 'done' : 'error',
+              output: formattedResult,
+              exitCode: rawResult.exitCode,
+              elapsed: rawResult.elapsed,
             });
+            emitUpdate(
+              rawResult.exitCode === 0 &&
+                [...runDetails.values()].every(
+                  (run) => run.status === 'done' || run.status === 'error',
+                )
+                ? [...runDetails.values()].some((run) => run.status === 'error')
+                  ? 'error'
+                  : 'done'
+                : 'running',
+            );
 
             return formattedResult;
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
+            runDetails.set(agent, {
+              ...runDetails.get(agent)!,
+              status: 'error',
+              output: `[${agent}] error: ${msg}`,
+            });
+            emitUpdate('running');
             return `[${agent}] error: ${msg}`;
           } finally {
             // Fix 4: removed setWidget call here too.
@@ -668,14 +856,22 @@ You can ONLY dispatch to agents listed above. Do not attempt to dispatch to agen
       // Wait for all agents to finish
       const results = await Promise.all([...outputMap.values()]);
 
+      const finalStatus = [...runDetails.values()].some(
+        (run) => run.status === 'error',
+      )
+        ? 'error'
+        : 'done';
+
       return {
         content: [{ type: 'text', text: results.join('\n\n---\n\n') }],
-        details: { agents, results },
+        details: getDetails(finalStatus),
       };
     },
   });
 
   pi.on('session_start', async (_event, ctx) => {
+    syncSessionModel(ctx.model);
+
     // Fix 1: use already-cached teams; if cache is stale, refresh first.
     refreshCache();
     const teams = cachedTeams;
@@ -689,5 +885,13 @@ You can ONLY dispatch to agents listed above. Do not attempt to dispatch to agen
     ctx.ui.setWidget('agent-dashboard', dashboardWidget(), {
       placement: 'aboveEditor',
     });
+  });
+
+  pi.on('model_select', (event) => {
+    syncSessionModel(event.model);
+  });
+
+  pi.on('session_switch', (_event, ctx) => {
+    syncSessionModel(ctx.model);
   });
 }
