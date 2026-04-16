@@ -9,7 +9,13 @@ import type {
 import type { Component, TUI } from '@mariozechner/pi-tui';
 import { Text } from '@mariozechner/pi-tui';
 import { Type } from '@sinclair/typebox';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -36,6 +42,10 @@ interface DispatchToolDetails {
   runs: DispatchRunDetails[];
 }
 
+interface DashboardSettings {
+  agentWorktreesEnabled: boolean;
+}
+
 export default function Dashboard(pi: ExtensionAPI) {
   let selectedTeam: string | null = null;
   let currentMembers: string[] = [];
@@ -49,8 +59,46 @@ export default function Dashboard(pi: ExtensionAPI) {
 
   // Fix 4: Cache process.cwd() once at module load to avoid repeated syscalls.
   const rootDir = process.cwd();
+  const dashboardStateDir = join(rootDir, '.pi', 'state');
+  const dashboardSettingsPath = join(dashboardStateDir, 'dashboard-ui.json');
 
   const DEFAULT_MODEL = 'openrouter/ollama/qwen3-next:80b-cloud';
+
+  const defaultSettings: DashboardSettings = {
+    agentWorktreesEnabled: true,
+  };
+
+  const readSettings = (): DashboardSettings => {
+    try {
+      if (!existsSync(dashboardSettingsPath)) {
+        return { ...defaultSettings };
+      }
+      const raw = JSON.parse(readFileSync(dashboardSettingsPath, 'utf-8')) as
+        | Partial<DashboardSettings>
+        | undefined;
+      return {
+        agentWorktreesEnabled:
+          typeof raw?.agentWorktreesEnabled === 'boolean'
+            ? raw.agentWorktreesEnabled
+            : defaultSettings.agentWorktreesEnabled,
+      };
+    } catch {
+      return { ...defaultSettings };
+    }
+  };
+
+  const writeSettings = (settings: DashboardSettings) => {
+    mkdirSync(dashboardStateDir, { recursive: true });
+    writeFileSync(dashboardSettingsPath, JSON.stringify(settings, null, 2));
+  };
+
+  const settings = readSettings();
+  let agentWorktreesEnabled = settings.agentWorktreesEnabled;
+
+  const persistAgentWorktreesEnabled = (enabled: boolean) => {
+    agentWorktreesEnabled = enabled;
+    writeSettings({ agentWorktreesEnabled: enabled });
+  };
 
   let sessionModel = DEFAULT_MODEL;
 
@@ -467,6 +515,43 @@ export default function Dashboard(pi: ExtensionAPI) {
     },
   });
 
+  pi.registerCommand('agent-worktrees', {
+    description:
+      'Enable or disable dedicated git worktrees for dispatched agents',
+    handler: async (args, ctx) => {
+      const raw = String(args ?? '').trim().toLowerCase();
+      let nextValue: boolean;
+
+      if (raw === 'true' || raw === 'on' || raw === '1' || raw === 'enable') {
+        nextValue = true;
+      } else if (
+        raw === 'false' ||
+        raw === 'off' ||
+        raw === '0' ||
+        raw === 'disable'
+      ) {
+        nextValue = false;
+      } else {
+        const selected = await ctx.ui.select('Dedicated agent worktrees', [
+          'true',
+          'false',
+        ]);
+        if (!selected) return;
+        nextValue = selected === 'true';
+      }
+
+      persistAgentWorktreesEnabled(nextValue);
+      ctx.ui.setStatus(
+        'agent-worktrees',
+        `🪵 agent worktrees: ${nextValue ? 'true' : 'false'}`,
+      );
+      ctx.ui.notify(
+        `Dedicated agent worktrees ${nextValue ? 'enabled' : 'disabled'}`,
+        'info',
+      );
+    },
+  });
+
   // ---------------------------------------------------------------------------
   // Fix 3: single persistent before_agent_start listener.
   // Registered once at module load time. Injects the current team context
@@ -517,6 +602,97 @@ You can ONLY dispatch to agents listed above. Do not attempt to dispatch to agen
   // ---------------------------------------------------------------------------
   // Dispatch helper
   // ---------------------------------------------------------------------------
+  const safeWorktreeName = (agent: string) => {
+    const slug = agent
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40);
+    const hash = createHash('sha1').update(agent).digest('hex').slice(0, 8);
+    return `${slug || 'agent'}-${hash}`;
+  };
+
+  const runGit = async (
+    args: string[],
+    cwd: string,
+    signal?: AbortSignal,
+  ): Promise<{ stdout: string; stderr: string; code: number }> => {
+    const result = await pi.exec('git', args, { cwd, signal });
+    return {
+      stdout: result.stdout,
+      stderr: result.stderr,
+      code: result.code,
+    };
+  };
+
+  const ensureAgentWorktree = async (
+    agent: string,
+    signal?: AbortSignal,
+  ): Promise<string> => {
+    const worktreesRoot = join(rootDir, '.pi', 'worktrees');
+    const worktreePath = join(worktreesRoot, safeWorktreeName(agent));
+    mkdirSync(worktreesRoot, { recursive: true });
+
+    const currentHeadResult = await runGit(['rev-parse', 'HEAD'], rootDir, signal);
+    if (currentHeadResult.code !== 0) {
+      throw new Error(
+        `Could not resolve HEAD for worktree setup: ${currentHeadResult.stderr || currentHeadResult.stdout}`,
+      );
+    }
+    const currentHead = currentHeadResult.stdout.trim();
+
+    if (!existsSync(worktreePath)) {
+      const addResult = await runGit(
+        ['worktree', 'add', '--detach', worktreePath, currentHead],
+        rootDir,
+        signal,
+      );
+      if (addResult.code !== 0) {
+        throw new Error(
+          `Failed to create worktree for ${agent}: ${addResult.stderr || addResult.stdout}`,
+        );
+      }
+    }
+
+    const existingCheck = await runGit(
+      ['rev-parse', '--is-inside-work-tree'],
+      worktreePath,
+      signal,
+    );
+    if (existingCheck.code !== 0) {
+      throw new Error(
+        `Worktree path exists but is invalid: ${worktreePath}. Remove it manually and retry.`,
+      );
+    }
+
+    const checkoutResult = await runGit(
+      ['checkout', '--detach', currentHead],
+      worktreePath,
+      signal,
+    );
+    if (checkoutResult.code !== 0) {
+      throw new Error(
+        `Failed to align worktree HEAD for ${agent}: ${checkoutResult.stderr || checkoutResult.stdout}`,
+      );
+    }
+
+    const resetResult = await runGit(['reset', '--hard', currentHead], worktreePath, signal);
+    if (resetResult.code !== 0) {
+      throw new Error(
+        `Failed to reset worktree for ${agent}: ${resetResult.stderr || resetResult.stdout}`,
+      );
+    }
+
+    const cleanResult = await runGit(['clean', '-fd'], worktreePath, signal);
+    if (cleanResult.code !== 0) {
+      throw new Error(
+        `Failed to clean worktree for ${agent}: ${cleanResult.stderr || cleanResult.stdout}`,
+      );
+    }
+
+    return worktreePath;
+  };
+
   const dispatchAgent = async (
     agent: string,
     task: string,
@@ -565,8 +741,11 @@ You can ONLY dispatch to agents listed above. Do not attempt to dispatch to agen
     // sufficient; the already-registered widget reads from the shared Map.
     agentLogs.set(agent, ['Starting...']);
 
-    // Fix 4: use rootDir instead of process.cwd().
-    const result = await pi.exec('pi', args, { signal, cwd: rootDir });
+    const executionCwd = agentWorktreesEnabled
+      ? await ensureAgentWorktree(agent, signal)
+      : rootDir;
+
+    const result = await pi.exec('pi', args, { signal, cwd: executionCwd });
 
     const lastLines = (result.stdout || result.stderr || '')
       .split('\n')
@@ -885,6 +1064,10 @@ You can ONLY dispatch to agents listed above. Do not attempt to dispatch to agen
     ctx.ui.setWidget('agent-dashboard', dashboardWidget(), {
       placement: 'aboveEditor',
     });
+    ctx.ui.setStatus(
+      'agent-worktrees',
+      `🪵 agent worktrees: ${agentWorktreesEnabled ? 'true' : 'false'}`,
+    );
   });
 
   pi.on('model_select', (event) => {

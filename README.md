@@ -38,6 +38,7 @@ Useful local prompt, skill, and tool entry points:
 - `/team-model-all <model-name>` changes the configured model for every role in the active team roster
 - `/team-select <team-name|all>` switches the active roster using `teams/agent-teams.yaml`; `all` restores the full default team
 - `/team-agent-log <role>` shows the full captured thinking log for that team member
+- `/agent-worktrees` opens a true/false selector to enable or disable dedicated git worktrees for dispatched agents (you can also pass `true` or `false` directly)
 - `/update` reloads the active team roster from `teams/agent-teams.yaml` and refreshes available model completions
 - `/subagent-kill` stops the currently running background subagent (`--force` sends SIGKILL, optional id like `/subagent-kill 4`)
 - `/subrm` is a short alias for `/subagent-kill`; with no args it targets the top/current subagent
